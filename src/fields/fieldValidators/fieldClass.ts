@@ -13,9 +13,9 @@ export interface FieldAttributes {
     maxSelections?: number
 }
 
-export interface FieldParams {
-    options : Option[]
-}
+// export interface FieldParams {
+//     options: Option[]
+// }
 
 export interface SchemaField {
     label: string;
@@ -34,18 +34,19 @@ export interface SchemaField {
     maxLength?: number;
     minLength?: number;
     fieldId?: string;
+    sourceDetails?: string;
     dependsOn?: boolean
-  }
-  
-  export interface Option {
-    label: string;
-    value: string;
-  }
+}
+
+//   export interface Option {
+//     label: string;
+//     value: string;
+//   }
 
 export abstract class Field {
     constructor(protected fieldAttributes: FieldAttributes,
-        protected fieldParams?: FieldParams
-    ) {}
+        protected fieldParams?: Option[]
+    ) { }
 
     abstract validate(value: any): boolean;
 }
