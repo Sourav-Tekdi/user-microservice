@@ -213,7 +213,7 @@ export class PostgresCohortService {
 
       if (data?.sourceDetails) {
         if (data.sourceDetails.source === "fieldparams") {
-          data.fieldParams.options.forEach((option) => {
+          data.fieldParams.forEach((option) => {
             if (data.value === option.value) {
               processedValue = option.label;
             }

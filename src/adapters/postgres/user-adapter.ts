@@ -443,7 +443,6 @@ export class PostgresUserService implements IServicelocator {
       userCreateDto.updatedBy = decoded?.sub
       // const emailId = decoded?.email;
 
-
       let email = await this.usersRepository.findOne({
         where: { userId: userCreateDto.createdBy }, select
           : ['email']
@@ -460,7 +459,6 @@ export class PostgresUserService implements IServicelocator {
       if (validatedRoles) {
         return APIResponse.error(response, apiId, "BAD_REQUEST", `${validatedRoles}`, HttpStatus.BAD_REQUEST);
       }
-
       // if (validatedRoles.length) {
       userCreateDto.username = userCreateDto.username.toLocaleLowerCase();
       const userSchema = new UserCreateDto(userCreateDto);
@@ -553,7 +551,6 @@ export class PostgresUserService implements IServicelocator {
         const checkValidEmail = CustomFieldsValidation.validate('email', userCreateDto.email);
         if (!checkValidEmail) {
           error.push(`Invalid email address`);
-          // return APIResponse.error(response, apiId, "BAD_REQUEST", `Invalid email address`, HttpStatus.BAD_REQUEST);
         }
       }
 
@@ -561,7 +558,6 @@ export class PostgresUserService implements IServicelocator {
         const checkValidMobile = CustomFieldsValidation.validate('mobile', userCreateDto.mobile);
         if (!checkValidMobile) {
           error.push(`Mobile number must be 10 digits long`);
-          // return APIResponse.error(response, apiId, "BAD_REQUEST", `Mobile number must be 10 digits long`, HttpStatus.BAD_REQUEST);
         }
       }
 
@@ -569,7 +565,6 @@ export class PostgresUserService implements IServicelocator {
         const checkValidDob = CustomFieldsValidation.validate('date', userCreateDto.dob);
         if (!checkValidDob) {
           error.push(`Date of birth must be in the format yyyy-mm-dd`);
-          // return APIResponse.error(response, apiId, "BAD_REQUEST", `Date of birth must be in the format yyyy-mm-dd`, HttpStatus.BAD_REQUEST);
         }
       }
     }
@@ -866,6 +861,7 @@ export class PostgresUserService implements IServicelocator {
   }
 
   public async validateCustomField(userCreateDto, response, apiId) {
+
     let fieldValues = userCreateDto ? userCreateDto.customFields : [];
     let encounteredKeys = [];
     let invalidateFields = [];
@@ -873,7 +869,7 @@ export class PostgresUserService implements IServicelocator {
 
     for (const fieldsData of fieldValues) {
       const fieldId = fieldsData['fieldId'];
-      let getFieldDetails = await this.fieldsService.getFieldByIdes(fieldId)
+      let getFieldDetails: any = await this.fieldsService.getFieldByIdes(fieldId)
 
       if (encounteredKeys.includes(fieldId)) {
         duplicateFieldKeys.push(`${fieldId} - ${getFieldDetails['name']}`)
@@ -881,8 +877,15 @@ export class PostgresUserService implements IServicelocator {
         encounteredKeys.push(fieldId)
       }
 
-      let checkValidation = this.fieldsService.validateFieldValue(getFieldDetails, fieldsData['value'])
+      console.log(getFieldDetails, fieldsData['value']);
+      if (getFieldDetails.sourceDetails.source == 'table') {
+        let getOption = await this.fieldsService.findDynamicOptions(getFieldDetails.sourceDetails.table);
+        getFieldDetails['fieldParams'] = getOption
+      } else {
+        getFieldDetails['fieldParams'] = JSON.parse(getFieldDetails.fieldParams);
+      }
 
+      let checkValidation = this.fieldsService.validateFieldValue(getFieldDetails, fieldsData['value'])
 
       if (typeof checkValidation === 'object' && 'error' in checkValidation) {
         invalidateFields.push(`${fieldId}: ${getFieldDetails['name']} - ${checkValidation?.error?.message}`)

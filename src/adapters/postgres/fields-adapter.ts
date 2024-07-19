@@ -103,14 +103,22 @@ export class PostgresFieldsService implements IServicelocatorfields {
         let invalidateFields = [];
         let duplicateFieldKeys = [];
 
+
         for (const fieldsData of fieldValues) {
             const fieldId = fieldsData['fieldId'];
-            let getFieldDetails = await this.getFieldByIdes(fieldId);
+            let getFieldDetails: any = await this.getFieldByIdes(fieldId);
 
             if (encounteredKeys.includes(fieldId)) {
                 duplicateFieldKeys.push(`${fieldId} - ${getFieldDetails['name']}`);
             } else {
                 encounteredKeys.push(fieldId);
+            }
+
+            if (getFieldDetails.sourceDetails.source == 'table') {
+                let getOption = await this.findDynamicOptions(getFieldDetails.sourceDetails.table);
+                getFieldDetails['fieldParams'] = getOption
+            } else {
+                getFieldDetails['fieldParams'] = JSON.parse(getFieldDetails.fieldParams);
             }
 
             let checkValidation = this.validateFieldValue(getFieldDetails, fieldsData['value']);
@@ -166,7 +174,7 @@ export class PostgresFieldsService implements IServicelocatorfields {
             if ((data?.dependsOn == '' || data?.dependsOn == undefined || data?.dependsOn == null) && data?.sourceDetails?.source === 'table' || data?.sourceDetails?.source === 'jsonfile') {
                 let options = await this.findDynamicOptions(data.sourceDetails.table);
                 data.fieldParams = data.fieldParams || {};
-                data.fieldParams.options = options;
+                data.fieldParams = options;
             }
         }
         let schema = this.mappedFields(result);
@@ -212,7 +220,7 @@ export class PostgresFieldsService implements IServicelocatorfields {
             let error = '';
             if (fieldsData.sourceDetails && fieldsData.sourceDetails.source == 'table') {
 
-                for (let sourceFieldName of fieldsData.fieldParams.options) {
+                for (let sourceFieldName of fieldsData.fieldParams) {
 
                     if (fieldsData.dependsOn && (!sourceFieldName['controllingfieldfk'] || sourceFieldName['controllingfieldfk'] === '')) {
                         storeWithoutControllingField.push(sourceFieldName['name'])
@@ -271,7 +279,7 @@ export class PostgresFieldsService implements IServicelocatorfields {
             fieldsData['type'] = fieldsData.type || getSourceDetails.type;
 
             if (getSourceDetails.fieldParams && getSourceDetails.sourceDetails && getSourceDetails.sourceDetails.source == 'table') {
-                for (let sourceFieldName of fieldsData.fieldParams.options) {
+                for (let sourceFieldName of fieldsData.fieldParams) {
                     if (getSourceDetails.dependsOn && (!sourceFieldName['controllingfieldfk'] || sourceFieldName['controllingfieldfk'] === '')) {
                         storeWithoutControllingField.push(sourceFieldName['name'])
                     }
