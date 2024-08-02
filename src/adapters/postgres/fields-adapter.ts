@@ -966,6 +966,15 @@ export class PostgresFieldsService implements IServicelocatorfields {
         let searchKey = [];
         let whereCondition = ` WHERE `;
         let index = 0;
+        let joinCond = '';
+
+        if (context === 'COHORT') {
+            joinCond = `JOIN "Cohort" u ON fv."itemId" = u."cohortId"`
+        } else if (context === 'USERS') {
+            joinCond = `JOIN "Users" u ON fv."itemId" = u."userId"`
+        } else {
+            joinCond = ``
+        }
 
         for (const [key, value] of Object.entries(stateDistBlockData)) {
             searchKey.push(`'${key}'`);
@@ -982,7 +991,8 @@ export class PostgresFieldsService implements IServicelocatorfields {
             jsonb_object_agg(f."name", fv."value") AS fields
         FROM "FieldValues" fv
         JOIN "Fields" f ON fv."fieldId" = f."fieldId"
-        WHERE f."name" IN (${searchKey}) AND f.context = '${context}'
+        ${joinCond}
+        WHERE f."name" IN (${searchKey}) AND (f.context IN('${context}', 'NULL', 'null', '') OR f.context IS NULL)
         GROUP BY fv."itemId"
         )
         SELECT "itemId"
@@ -1129,7 +1139,7 @@ export class PostgresFieldsService implements IServicelocatorfields {
     public async getUserCustomFieldDetails(
         userId: string,
         fieldOption?: boolean
-      ) {
+    ) {
         const query = `
         SELECT DISTINCT 
           f."fieldId",
@@ -1148,39 +1158,39 @@ export class PostgresFieldsService implements IServicelocatorfields {
       `;
         let result = await this.fieldsRepository.query(query, [userId]);
         result = result.map(async (data) => {
-          const originalValue = data.value;
-          let processedValue = data.value;
-    
-          if (data?.sourceDetails) {
-            if (data.sourceDetails.source === "fieldparams") {
-              data.fieldParams.options.forEach((option) => {
-                if (data.value === option.value) {
-                  processedValue = option.label;
+            const originalValue = data.value;
+            let processedValue = data.value;
+
+            if (data?.sourceDetails) {
+                if (data.sourceDetails.source === "fieldparams") {
+                    data.fieldParams.options.forEach((option) => {
+                        if (data.value === option.value) {
+                            processedValue = option.label;
+                        }
+                    });
+                } else if (data.sourceDetails.source === "table") {
+                    let labels = await this.findDynamicOptions(
+                        data.sourceDetails.table,
+                        `value='${data.value}'`
+                    );
+                    if (labels && labels.length > 0) {
+                        processedValue = labels[0].label;
+                    }
                 }
-              });
-            } else if (data.sourceDetails.source === "table") {
-              let labels = await this.findDynamicOptions(
-                data.sourceDetails.table,
-                `value='${data.value}'`
-              );
-              if (labels && labels.length > 0) {
-                processedValue = labels[0].label;
-              }
             }
-          }
-    
-          delete data.fieldParams;
-          delete data.sourceDetails;
-    
-          return {
-            ...data,
-            value: processedValue,
-            code: originalValue
-          };
+
+            delete data.fieldParams;
+            delete data.sourceDetails;
+
+            return {
+                ...data,
+                value: processedValue,
+                code: originalValue
+            };
         });
-    
+
         result = await Promise.all(result);
         return result;
-      }
+    }
 
 }
