@@ -32,8 +32,8 @@ import {
 import { Request } from "@nestjs/common";
 import { FieldsDto } from "./dto/fields.dto";
 import { FieldsUpdateDto } from "./dto/fields-update.dto";
-import { FileInterceptor } from "@nestjs/platform-express";
-import { diskStorage } from "multer";
+// import { FileInterceptor } from "@nestjs/platform-express";
+// import { diskStorage } from "multer";
 import { Response } from "express";
 import { FieldsAdapter } from "./fieldsadapter";
 import { FieldValuesDto } from "./dto/field-values.dto";
