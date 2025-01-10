@@ -821,7 +821,7 @@ export class PostgresUserService implements IServicelocator {
         );
       }
 
-      const user = await this.usersRepository.findOne({ where: { userId: userUpdateDto.userId } });
+      const user = await this.usersRepository.findOne({ where: { userId: userUpdateDto?.userId } });
       if (!user) {
         return APIResponse.error(
           response,
@@ -833,24 +833,24 @@ export class PostgresUserService implements IServicelocator {
       }
 
       //mutideviceId
-      if (userUpdateDto?.userData?.deviceId) {
+      if (userUpdateDto??.userData?.deviceId) {
         let deviceIds: any;
-        if (userUpdateDto.userData.action === ActionType.ADD) {
+        if (userUpdateDto?.userData.action === ActionType.ADD) {
           // add deviceId
-          deviceIds = await this.loginDeviceIdAction(userUpdateDto.userData.deviceId, userUpdateDto.userId, user.deviceId)
-          userUpdateDto.userData.deviceId = deviceIds;
+          deviceIds = await this.loginDeviceIdAction(userUpdateDto?.userData.deviceId, userUpdateDto?.userId, user.deviceId)
+          userUpdateDto?.userData.deviceId = deviceIds;
 
-        } else if (userUpdateDto.userData.action === ActionType.REMOVE) {
+        } else if (userUpdateDto?.userData.action === ActionType.REMOVE) {
           //remove deviceId
-          deviceIds = await this.onLogoutDeviceId(userUpdateDto.userData.deviceId, userUpdateDto.userId, user.deviceId)
-          userUpdateDto.userData.deviceId = deviceIds;
+          deviceIds = await this.onLogoutDeviceId(userUpdateDto?.userData.deviceId, userUpdateDto?.userId, user.deviceId)
+          userUpdateDto?.userData.deviceId = deviceIds;
         }
       }
 
 
-      if (userUpdateDto.userData) {
-        await this.updateBasicUserDetails(userUpdateDto.userId, userUpdateDto.userData);
-        updatedData["basicDetails"] = userUpdateDto.userData;
+      if (userUpdateDto?.userData) {
+        await this.updateBasicUserDetails(userUpdateDto?.userId, userUpdateDto?.userData);
+        updatedData["basicDetails"] = userUpdateDto?.userData;
       }
 
       LoggerUtil.log(
