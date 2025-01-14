@@ -95,6 +95,7 @@ export class UserCreateDto {
   @Expose()
   email: string;
 
+  
   @ApiProperty({
     type: String,
     description: "The password of the user",
