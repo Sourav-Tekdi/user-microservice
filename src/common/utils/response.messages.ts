@@ -87,7 +87,6 @@ export const API_RESPONSES = {
 
   //get User Details
   USER_GET_SUCCESSFULLY: 'User details fetched successfully.',
-
   USER_GET_BY_EMAIL_SUCCESSFULLY: 'User details fetched successfully by email',
   USER_GET_BY_PHONE_SUCCESSFULLY: 'User details fetched successfully by phone',
   USER_GET_BY_USERNAME_SUCCESSFULLY: 'User details fetched successfully by username',
