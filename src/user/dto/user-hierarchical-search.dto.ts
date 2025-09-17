@@ -24,13 +24,14 @@ import {
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 /**
- * Custom validator to ensure at least one filter is provided
+ * Custom validator to ensure at least one filter is provided (now optional - returns default users if empty)
  */
 @ValidatorConstraint({ name: 'atLeastOneFilter', async: false })
 export class AtLeastOneFilterConstraint implements ValidatorConstraintInterface {
   validate(filters: any, args: ValidationArguments): boolean {
+    // Allow empty filters - will return default users from cohort members
     if (!filters || typeof filters !== 'object') {
-      return false;
+      return true;
     }
     
     // Check if any filter has values
@@ -43,11 +44,11 @@ export class AtLeastOneFilterConstraint implements ValidatorConstraintInterface 
     const parentObject = args.object as any;
     const hasRoleFilter = parentObject.role && Array.isArray(parentObject.role) && parentObject.role.length > 0;
     
-    return hasLocationFilter || hasRoleFilter;
+    return true; // Always valid - if no filters, return default users
   }
 
   defaultMessage(): string {
-    return 'At least one location filter or role filter must be provided';
+    return 'Filters are optional - if no filters provided, returns default users from cohort members';
   }
 }
 
@@ -304,16 +305,13 @@ export class HierarchicalLocationFiltersDto {
 
   @ApiProperty({
     type: LocationFiltersDto,
-    description: "Location-based filters for hierarchical search. At least one location filter or role filter must be provided.",
+    description: "Location-based filters for hierarchical search. If no filters provided, returns default users from cohort members.",
     required: true
   })
   @Expose()
   @IsObject()
   @ValidateNested()
   @Type(() => LocationFiltersDto)
-  @IsAtLeastOneFilter({
-    message: 'At least one location filter or role filter must be provided'
-  })
   filters: LocationFiltersDto;
 
   @ApiProperty({

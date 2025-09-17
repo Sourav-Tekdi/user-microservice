@@ -3100,15 +3100,22 @@ export class PostgresUserService implements IServicelocator {
         roleUserIds = await this.getRoleFilteredUsers(role, tenantId);
       }
       
-      // Step 3: Combine filters using efficient Set intersection
-      const combinedUserIds = this.combineFilterResults(locationUserIds, roleUserIds);
+      // Step 3: Handle case when no filters provided - get default users from cohort members
+      let combinedUserIds: string[];
+      if (locationUserIds.length === 0 && roleUserIds.length === 0) {
+        LoggerUtil.log(`No filters provided, getting default users from cohort members for tenant ${tenantId}`, apiId);
+        combinedUserIds = await this.getDefaultUsersFromCohortMembers(tenantId);
+      } else {
+        // Step 4: Combine filters using efficient Set intersection
+        combinedUserIds = this.combineFilterResults(locationUserIds, roleUserIds);
+      }
       
-      // Step 4: Return early if no users found
+      // Step 5: Return early if no users found
       if (combinedUserIds.length === 0) {
         return this.createEmptyResponse(response, apiId, filters, role, limit, offset, sortField, sortDirection);
       }
       
-      // Step 5: Filter out center and batch from customfields request (they belong in cohortData)
+      // Step 6: Filter out center and batch from customfields request (they belong in cohortData)
       const filteredCustomFields = customfields ? customfields.filter(field => 
         !this.isExcludedFromCustomFields(field)
       ) : undefined;
@@ -3117,11 +3124,11 @@ export class PostgresUserService implements IServicelocator {
         LoggerUtil.warn(`Removed ${excludedFields} from customfields request - these are now in cohortData`, apiId);
       }
       
-      // Step 6: Get paginated user data efficiently
+      // Step 7: Get paginated user data efficiently
       const normalizedSortDirection = sortDirection.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
       const userData = await this.getPaginatedUsers(combinedUserIds, tenantId, limit, offset, sortField, normalizedSortDirection, filteredCustomFields);
       
-      // Step 7: Return successful response
+      // Step 8: Return successful response
       return APIResponse.success(response, apiId, {
         users: userData.users,
         totalCount: userData.totalCount,
@@ -3287,9 +3294,7 @@ export class PostgresUserService implements IServicelocator {
    * Combine location and role filter results efficiently
    */
   private combineFilterResults(locationUserIds: string[], roleUserIds: string[]): string[] {
-    if (locationUserIds.length === 0 && roleUserIds.length === 0) {
-      throw new Error('No valid filters provided. Please provide at least one location or role filter');
-    }
+    // This function is only called when at least one filter type has results
     
     if (locationUserIds.length > 0 && roleUserIds.length > 0) {
       // Use Set intersection for O(n) performance
@@ -3298,6 +3303,47 @@ export class PostgresUserService implements IServicelocator {
     }
     
     return locationUserIds.length > 0 ? locationUserIds : roleUserIds;
+  }
+
+  /**
+   * Get default users from cohort members when no filters provided
+   * Returns all users from cohort members table for the tenant
+   */
+  private async getDefaultUsersFromCohortMembers(tenantId: string): Promise<string[]> {
+    const apiId = APIID.USER_LIST;
+    
+    try {
+      LoggerUtil.log(`Getting default users from all cohort members for tenant ${tenantId}`, apiId);
+      
+      // Get all users who are members of any cohort for this tenant
+      // Using window function to get most recent cohort membership per user
+      const query = `
+        WITH recent_memberships AS (
+          SELECT 
+            cm."userId",
+            cm."createdAt",
+            ROW_NUMBER() OVER (PARTITION BY cm."userId" ORDER BY cm."createdAt" DESC) as rn
+          FROM public."CohortMembers" cm
+          JOIN public."Users" u ON cm."userId" = u."userId"
+          LEFT JOIN "UserTenantMapping" utm ON u."userId" = utm."userId"
+          WHERE utm."tenantId" = $1
+        )
+        SELECT "userId"
+        FROM recent_memberships 
+        WHERE rn = 1
+        ORDER BY "createdAt" DESC
+      `;
+      
+      const result = await this.usersRepository.query(query, [tenantId]);
+      const userIds: string[] = result.map((row: any) => String(row.userId));
+      
+      LoggerUtil.log(`Found ${userIds.length} default users from cohort members for tenant ${tenantId}`, apiId);
+      return userIds;
+      
+    } catch (error) {
+      LoggerUtil.error(`Error getting default users from cohort members: ${error.message}`, error.stack, apiId);
+      throw new Error(`Failed to get default users: ${error.message}`);
+    }
   }
 
   /**
@@ -3565,14 +3611,18 @@ export class PostgresUserService implements IServicelocator {
       FROM 
         public."CohortMembers" cm
         LEFT JOIN public."Cohort" batch ON cm."cohortId" = batch."cohortId"
-        LEFT JOIN public."Cohort" center ON batch."parentId"::uuid = center."cohortId"
+        LEFT JOIN public."Cohort" center ON batch."parentId"::text = center."cohortId"::text
       WHERE 
-        cm."userId" = ANY($1::uuid[])
+        cm."userId"::text = ANY($1::text[])
       ORDER BY cm."createdAt" DESC
     `;
     
     try {
+      LoggerUtil.log(`Getting cohort data for ${userIds.length} users: ${userIds.slice(0, 3).join(', ')}${userIds.length > 3 ? '...' : ''}`, apiId);
+      
       const result = await this.usersRepository.query(query, [userIds]);
+      LoggerUtil.log(`Cohort data query returned ${result.length} membership records`, apiId);
+      
       if (result.length === 0) {
         LoggerUtil.warn(`No cohort memberships found for any of the ${userIds.length} users`, apiId);
       }
@@ -3625,8 +3675,10 @@ export class PostgresUserService implements IServicelocator {
         cohortDataMap[userId].push(cohortEntry);
       });
 
+      LoggerUtil.log(`Returning cohort data for ${Object.keys(cohortDataMap).length} users`, apiId);
       return cohortDataMap;
     } catch (error) {
+      LoggerUtil.error(`Error in getBatchAndCenterNames: ${error.message}`, error.stack, apiId);
       // Return empty object instead of throwing to avoid breaking the main operation
       return {};
     }
