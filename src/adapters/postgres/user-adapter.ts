@@ -426,9 +426,6 @@ export class PostgresUserService implements IServicelocator {
       (key) => key !== "district" && key !== "state"
     );
 
-    // Track if we need role filtering (single role)
-    let roleFilter: string | null = null;
-
     if (filters && Object.keys(filters).length > 0) {
       let coreFields = await this.getCoreColumnNames();
       const allCoreField = [...coreFields, 'fromDate', 'toDate', 'role', 'tenantId', 'name'];
@@ -463,10 +460,13 @@ export class PostgresUserService implements IServicelocator {
               break;
 
             case "role":
-              // Store role filter for later use (single role)
-              if (typeof value === 'string' && value.trim() !== '') {
-                roleFilter = value.trim();
-              }
+              whereCondition += ` R."title" = '${value}'`;
+              index++;
+              break;
+
+            case "status":
+              whereCondition += ` U."status" IN('${value}')`;
+              index++;
               break;
 
             case "fromDate":
@@ -569,67 +569,35 @@ export class PostgresUserService implements IServicelocator {
       LoggerUtil.warn(`No tenantId provided - returning users from all tenants`, APIID.USER_LIST);
     }
 
-    // ==== NEW QUERY WITH ROLE AGGREGATION ====
-    let roleWhereCondition = "";
-    
-    if (roleFilter) {
-      roleWhereCondition = `AND R."title" = '${roleFilter}'`;
-    }
-
+    // Simple query - get distinct users (filtering by role if provided)
     const query = `
-      WITH user_base AS (
-        SELECT DISTINCT
-          U."userId",
-          U."enrollmentId",
-          U."username",
-          U."email",
-          U."firstName",
-          U."name",
-          U."middleName",
-          U."lastName",
-          U."gender",
-          U."dob",
-          U."mobile",
-          U."createdBy",
-          U."updatedBy",
-          U."createdAt",
-          U."updatedAt",
-          U."status",
-          UTM."tenantId"
-        FROM public."Users" U
-        LEFT JOIN public."CohortMembers" CM ON CM."userId" = U."userId"
-        LEFT JOIN public."UserTenantMapping" UTM ON UTM."userId" = U."userId"
-        ${roleFilter ? `
-        INNER JOIN public."UserRolesMapping" UR_FILTER ON UR_FILTER."userId" = U."userId" AND UR_FILTER."tenantId" = UTM."tenantId"
-        INNER JOIN public."Roles" R_FILTER ON R_FILTER."roleId" = UR_FILTER."roleId" ${roleWhereCondition}
-        ` : ''}
-        ${whereCondition}
-      ),
-      user_roles AS (
-        SELECT 
-          ub."userId",
-          json_agg(
-            json_build_object(
-              'id', R."roleId",
-              'name', R."title"
-            ) ORDER BY R."title"
-          ) FILTER (WHERE R."roleId" IS NOT NULL) as roles
-        FROM user_base ub
-        LEFT JOIN public."UserRolesMapping" UR ON UR."userId" = ub."userId" AND UR."tenantId" = ub."tenantId"
-        LEFT JOIN public."Roles" R ON R."roleId" = UR."roleId"
-        GROUP BY ub."userId"
-      ),
-      counted_users AS (
-        SELECT ub.*, COUNT(*) OVER() AS total_count
-        FROM user_base ub
-      )
-      SELECT 
-        cu.*,
-        COALESCE(ur.roles, '[]'::json) as roles
-      FROM counted_users cu
-      LEFT JOIN user_roles ur ON ur."userId" = cu."userId"
-      ${orderingCondition}
-      ${limit} ${offset}
+      SELECT DISTINCT ON (U."userId") 
+        U."userId",
+        U."enrollmentId", 
+        U."username",
+        U."email", 
+        U."firstName", 
+        U."name",
+        UTM."tenantId", 
+        U."middleName", 
+        U."lastName", 
+        U."gender", 
+        U."dob", 
+        U."mobile", 
+        U."createdBy",
+        U."updatedBy", 
+        U."createdAt", 
+        U."updatedAt", 
+        U."status", 
+        COUNT(*) OVER() AS total_count 
+      FROM public."Users" U
+      LEFT JOIN public."CohortMembers" CM ON CM."userId" = U."userId"
+      LEFT JOIN public."UserRolesMapping" UR ON UR."userId" = U."userId" AND UR."tenantId" = (SELECT "tenantId" FROM public."UserTenantMapping" WHERE "userId" = U."userId" LIMIT 1)
+      LEFT JOIN public."UserTenantMapping" UTM ON UTM."userId" = U."userId"
+      LEFT JOIN public."Roles" R ON R."roleId" = UR."roleId" 
+      ${whereCondition} 
+      ${orderingCondition} 
+      ${offset} ${limit}
     `;
 
     const userDetails = await this.usersRepository.query(query);
@@ -638,10 +606,9 @@ export class PostgresUserService implements IServicelocator {
       result.totalCount = parseInt(userDetails[0].total_count, 10);
 
       for (const userData of userDetails) {
-        // Parse roles JSON if it's a string
-        if (typeof userData.roles === 'string') {
-          userData.roles = JSON.parse(userData.roles);
-        }
+        // Fetch ALL roles for this user
+        const userRoles = await this.findAllUserRoles(userData.userId, userData.tenantId || tenantId);
+        userData["roles"] = userRoles;
 
         // Get custom fields
         const customFields = await this.fieldsService.getCustomFieldDetails(
