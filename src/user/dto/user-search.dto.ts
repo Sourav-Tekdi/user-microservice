@@ -47,10 +47,23 @@ export class setFilters {
   village: string;
 
   @ApiPropertyOptional({
-    type: String,
-    description: "Role",
+    type: [String],
+    description: "Roles - Filter by multiple role names (OR logic). Example: ['Admin', 'Instructor']",
+    example: ["Admin", "Instructor", "Learner"]
   })
-  role: string;
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  roles?: string[];
+
+  // Deprecated: Keep for backward compatibility
+  @ApiPropertyOptional({
+    type: String,
+    description: "Role (deprecated - use 'roles' instead)",
+  })
+  @IsOptional()
+  @IsString()
+  role?: string;
 
   @ApiPropertyOptional({
     type: [String],
@@ -160,13 +173,25 @@ export class tenantCohortRoleMappingDto {
   cohortId?: string[];
 
   @ApiPropertyOptional({
+    type: [String],
+    description: "Role Ids - Filter by multiple role IDs",
+    example: ["role-uuid-1", "role-uuid-2"]
+  })
+  @Expose()
+  @IsOptional()
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  roleIds?: string[];
+
+  // Deprecated: Keep for backward compatibility
+  @ApiPropertyOptional({
     type: String,
-    description: "Role Id",
+    description: "Role Id (deprecated - use 'roleIds' instead)",
   })
   @Expose()
   @IsOptional()
   @IsUUID()
-  roleId: string;
+  roleId?: string;
 }
 
 export class SuggestUserDto{

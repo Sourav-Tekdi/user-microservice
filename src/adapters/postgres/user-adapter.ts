@@ -408,6 +408,26 @@ export class PostgresUserService implements IServicelocator {
     let excludeCohortIdes;
     let excludeUserIdes;
 
+    // ==== BACKWARD COMPATIBILITY LAYER ====
+    // Convert old filter format to new format
+    if (filters) {
+      // Handle old 'role' field (string) -> new 'roles' field (array)
+      if (filters.role && !filters.roles) {
+        filters.roles = Array.isArray(filters.role) ? filters.role : [filters.role];
+        LoggerUtil.warn('filters.role is deprecated, use filters.roles instead', APIID.USER_LIST);
+      }
+    }
+
+    // Handle tenantCohortRoleMapping backward compatibility
+    if (userSearchDto.tenantCohortRoleMapping) {
+      const mapping = userSearchDto.tenantCohortRoleMapping;
+      if (mapping.roleId && !mapping.roleIds) {
+        mapping.roleIds = [mapping.roleId];
+        LoggerUtil.warn('tenantCohortRoleMapping.roleId is deprecated, use roleIds instead', APIID.USER_LIST);
+      }
+    }
+    // ==== END BACKWARD COMPATIBILITY ====
+
     offset = offset ? `OFFSET ${offset}` : "";
     limit = limit ? `LIMIT ${limit}` : "";
     const result = {
@@ -426,13 +446,14 @@ export class PostgresUserService implements IServicelocator {
       (key) => key !== "district" && key !== "state"
     );
 
+    // Track if we need role filtering
+    let roleFilterArray: string[] = [];
+
     if (filters && Object.keys(filters).length > 0) {
-      //Fwtch all core fields
       let coreFields = await this.getCoreColumnNames();
-      const allCoreField = [...coreFields, 'fromDate', 'toDate', 'role', 'tenantId', 'name'];
+      const allCoreField = [...coreFields, 'fromDate', 'toDate', 'roles', 'tenantId', 'name'];
 
       for (const [key, value] of Object.entries(filters)) {
-        //Check request filter are proesent on core file or cutom fields
         if (allCoreField.includes(key)) {
           if (index > 0 && index < Object.keys(filters).length) {
             whereCondition += ` AND `;
@@ -461,14 +482,12 @@ export class PostgresUserService implements IServicelocator {
               index++;
               break;
 
-            case "role":
-              whereCondition += ` R."name" = '${value}'`;
-              index++;
+            case "roles":
+              // Store role filter for later use
+              if (Array.isArray(value) && value.length > 0) {
+                roleFilterArray = value;
+              }
               break;
-
-            case "status":
-              whereCondition += ` U."status" IN('${value}')`;
-              index++;
 
             case "fromDate":
               whereCondition += ` DATE(U."createdAt") >= '${value}'`;
@@ -491,7 +510,6 @@ export class PostgresUserService implements IServicelocator {
               break;
           }
         } else {
-          //For custom field store the data in key value pear
           searchCustomFields[key] = value;
         }
       }
@@ -515,9 +533,7 @@ export class PostgresUserService implements IServicelocator {
 
     let getUserIdUsingCustomFields;
 
-    //If source config in source details from fields table is not exist then return false
     if (Object.keys(searchCustomFields).length > 0) {
-
       const context = "USERS";
       getUserIdUsingCustomFields =
         await this.fieldsService.filterUserUsingCustomFieldsOptimized(
@@ -561,7 +577,7 @@ export class PostgresUserService implements IServicelocator {
       whereCondition = "";
     }
 
-    // Apply tenant filtering conditionally if tenantId is provided from headers
+    // Apply tenant filtering
     if (tenantId && tenantId.trim() !== '') {
       if (index === 0 && whereCondition === "") {
         whereCondition = `WHERE UTM."tenantId" = '${tenantId}'`;
@@ -573,24 +589,82 @@ export class PostgresUserService implements IServicelocator {
       LoggerUtil.warn(`No tenantId provided - returning users from all tenants`, APIID.USER_LIST);
     }
 
-    //Get user core fields data
-    const query = `SELECT U."userId",U."enrollmentId", U."username",U."email", U."firstName", U."name",UTM."tenantId", U."middleName", U."lastName", U."gender", U."dob", R."name" AS role, U."mobile", U."createdBy",U."updatedBy", U."createdAt", U."updatedAt", U."status", COUNT(*) OVER() AS total_count 
-      FROM  public."Users" U
-      LEFT JOIN public."CohortMembers" CM 
-      ON CM."userId" = U."userId"
-      LEFT JOIN public."UserRolesMapping" UR
-      ON UR."userId" = U."userId"
-      LEFT JOIN public."UserTenantMapping" UTM
-      ON UTM."userId" = U."userId"
-      LEFT JOIN public."Roles" R
-      ON R."roleId" = UR."roleId" ${whereCondition} GROUP BY U."userId",UTM."tenantId", R."name" ${orderingCondition} ${offset} ${limit}`;
+    // ==== NEW QUERY WITH ROLE AGGREGATION ====
+    let roleWhereCondition = "";
+    
+    if (roleFilterArray.length > 0) {
+      const roleNames = roleFilterArray.map(role => `'${role}'`).join(",");
+      roleWhereCondition = `AND R."title" IN (${roleNames})`;
+    }
+
+    const query = `
+      WITH user_base AS (
+        SELECT DISTINCT
+          U."userId",
+          U."enrollmentId",
+          U."username",
+          U."email",
+          U."firstName",
+          U."name",
+          U."middleName",
+          U."lastName",
+          U."gender",
+          U."dob",
+          U."mobile",
+          U."createdBy",
+          U."updatedBy",
+          U."createdAt",
+          U."updatedAt",
+          U."status",
+          UTM."tenantId"
+        FROM public."Users" U
+        LEFT JOIN public."CohortMembers" CM ON CM."userId" = U."userId"
+        LEFT JOIN public."UserTenantMapping" UTM ON UTM."userId" = U."userId"
+        ${roleFilterArray.length > 0 ? `
+        INNER JOIN public."UserRolesMapping" UR_FILTER ON UR_FILTER."userId" = U."userId" AND UR_FILTER."tenantId" = UTM."tenantId"
+        INNER JOIN public."Roles" R_FILTER ON R_FILTER."roleId" = UR_FILTER."roleId" ${roleWhereCondition}
+        ` : ''}
+        ${whereCondition}
+      ),
+      user_roles AS (
+        SELECT 
+          ub."userId",
+          json_agg(
+            json_build_object(
+              'id', R."roleId",
+              'name', R."title"
+            ) ORDER BY R."title"
+          ) FILTER (WHERE R."roleId" IS NOT NULL) as roles
+        FROM user_base ub
+        LEFT JOIN public."UserRolesMapping" UR ON UR."userId" = ub."userId" AND UR."tenantId" = ub."tenantId"
+        LEFT JOIN public."Roles" R ON R."roleId" = UR."roleId"
+        GROUP BY ub."userId"
+      ),
+      counted_users AS (
+        SELECT ub.*, COUNT(*) OVER() AS total_count
+        FROM user_base ub
+      )
+      SELECT 
+        cu.*,
+        COALESCE(ur.roles, '[]'::json) as roles
+      FROM counted_users cu
+      LEFT JOIN user_roles ur ON ur."userId" = cu."userId"
+      ${orderingCondition}
+      ${limit} ${offset}
+    `;
+
     const userDetails = await this.usersRepository.query(query);
 
     if (userDetails.length > 0) {
       result.totalCount = parseInt(userDetails[0].total_count, 10);
 
-      // Get user custom field data
       for (const userData of userDetails) {
+        // Parse roles JSON if it's a string
+        if (typeof userData.roles === 'string') {
+          userData.roles = JSON.parse(userData.roles);
+        }
+
+        // Get custom fields
         const customFields = await this.fieldsService.getCustomFieldDetails(
           userData.userId, 'Users'
         );
@@ -755,6 +829,51 @@ export class PostgresUserService implements IServicelocator {
       select: ["title", "code"],
     });
     return role;
+  }
+
+  /**
+   * Find all roles for a user in a specific tenant
+   * Returns array of roles with id and name
+   * @param userId - The user's UUID
+   * @param tenantId - The tenant's UUID
+   * @returns Array of role objects with id and name
+   */
+  async findAllUserRoles(userId: string, tenantId: string): Promise<Array<{ id: string; name: string }>> {
+    try {
+      const getRoles = await this.userRoleMappingRepository.find({
+        where: {
+          userId: userId,
+          tenantId: tenantId,
+        },
+      });
+
+      if (!getRoles || getRoles.length === 0) {
+        return [];
+      }
+
+      const rolePromises = getRoles.map(mapping =>
+        this.roleRepository.findOne({
+          where: { roleId: mapping.roleId },
+          select: ["roleId", "title"],
+        })
+      );
+
+      const roles = await Promise.all(rolePromises);
+
+      return roles
+        .filter(role => role !== null)
+        .map(role => ({
+          id: role.roleId,
+          name: role.title
+        }));
+    } catch (error) {
+      LoggerUtil.error(
+        `Error fetching roles for user ${userId} in tenant ${tenantId}`,
+        error.message,
+        APIID.USER_LIST
+      );
+      return [];
+    }
   }
 
   async findUserDetails(userId, username?: any, tenantId?: string) {
