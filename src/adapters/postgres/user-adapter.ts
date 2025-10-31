@@ -408,26 +408,6 @@ export class PostgresUserService implements IServicelocator {
     let excludeCohortIdes;
     let excludeUserIdes;
 
-    // ==== BACKWARD COMPATIBILITY LAYER ====
-    // Convert old filter format to new format
-    if (filters) {
-      // Handle old 'role' field (string) -> new 'roles' field (array)
-      if (filters.role && !filters.roles) {
-        filters.roles = Array.isArray(filters.role) ? filters.role : [filters.role];
-        LoggerUtil.warn('filters.role is deprecated, use filters.roles instead', APIID.USER_LIST);
-      }
-    }
-
-    // Handle tenantCohortRoleMapping backward compatibility
-    if (userSearchDto.tenantCohortRoleMapping) {
-      const mapping = userSearchDto.tenantCohortRoleMapping;
-      if (mapping.roleId && !mapping.roleIds) {
-        mapping.roleIds = [mapping.roleId];
-        LoggerUtil.warn('tenantCohortRoleMapping.roleId is deprecated, use roleIds instead', APIID.USER_LIST);
-      }
-    }
-    // ==== END BACKWARD COMPATIBILITY ====
-
     offset = offset ? `OFFSET ${offset}` : "";
     limit = limit ? `LIMIT ${limit}` : "";
     const result = {
@@ -446,12 +426,12 @@ export class PostgresUserService implements IServicelocator {
       (key) => key !== "district" && key !== "state"
     );
 
-    // Track if we need role filtering
-    let roleFilterArray: string[] = [];
+    // Track if we need role filtering (single role)
+    let roleFilter: string | null = null;
 
     if (filters && Object.keys(filters).length > 0) {
       let coreFields = await this.getCoreColumnNames();
-      const allCoreField = [...coreFields, 'fromDate', 'toDate', 'roles', 'tenantId', 'name'];
+      const allCoreField = [...coreFields, 'fromDate', 'toDate', 'role', 'tenantId', 'name'];
 
       for (const [key, value] of Object.entries(filters)) {
         if (allCoreField.includes(key)) {
@@ -482,10 +462,10 @@ export class PostgresUserService implements IServicelocator {
               index++;
               break;
 
-            case "roles":
-              // Store role filter for later use
-              if (Array.isArray(value) && value.length > 0) {
-                roleFilterArray = value;
+            case "role":
+              // Store role filter for later use (single role)
+              if (typeof value === 'string' && value.trim() !== '') {
+                roleFilter = value.trim();
               }
               break;
 
@@ -592,9 +572,8 @@ export class PostgresUserService implements IServicelocator {
     // ==== NEW QUERY WITH ROLE AGGREGATION ====
     let roleWhereCondition = "";
     
-    if (roleFilterArray.length > 0) {
-      const roleNames = roleFilterArray.map(role => `'${role}'`).join(",");
-      roleWhereCondition = `AND R."title" IN (${roleNames})`;
+    if (roleFilter) {
+      roleWhereCondition = `AND R."title" = '${roleFilter}'`;
     }
 
     const query = `
@@ -620,7 +599,7 @@ export class PostgresUserService implements IServicelocator {
         FROM public."Users" U
         LEFT JOIN public."CohortMembers" CM ON CM."userId" = U."userId"
         LEFT JOIN public."UserTenantMapping" UTM ON UTM."userId" = U."userId"
-        ${roleFilterArray.length > 0 ? `
+        ${roleFilter ? `
         INNER JOIN public."UserRolesMapping" UR_FILTER ON UR_FILTER."userId" = U."userId" AND UR_FILTER."tenantId" = UTM."tenantId"
         INNER JOIN public."Roles" R_FILTER ON R_FILTER."roleId" = UR_FILTER."roleId" ${roleWhereCondition}
         ` : ''}
