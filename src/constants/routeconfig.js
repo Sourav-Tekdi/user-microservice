@@ -677,7 +677,7 @@
 			]
 		},
 		{
-			"sourceRoute": "/interface/v1/users-hierarchy-view",
+			"sourceRoute": "/interface/v1/user/users-hierarchy-view",
 			"type": "POST",
 			"priority": "MUST_HAVE",
 			"inSequence": false,
