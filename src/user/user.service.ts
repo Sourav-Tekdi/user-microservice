@@ -80,6 +80,8 @@ export class UserService {
     private fieldsValueRepository: Repository<FieldValues>,
     @InjectRepository(CohortMembers)
     private cohortMemberRepository: Repository<CohortMembers>,
+    @InjectRepository(Cohort)
+    private cohortRepository: Repository<Cohort>,
     @InjectRepository(UserTenantMapping)
     private userTenantMappingRepository: Repository<UserTenantMapping>,
     @InjectRepository(Tenants)
@@ -459,7 +461,7 @@ export class UserService {
 
     // Step 3: Extract domain from email
     const emailDomain = email.split('@')[1];
-    
+
     if (!emailDomain) {
       return APIResponse.error(
         response,
@@ -774,199 +776,199 @@ export class UserService {
   //   return result;
   // }
   async findAllUserDetails(userSearchDto, tenantId?: string, includeCustomFields: boolean = true) {
-  let { limit, offset, filters, exclude, sort } = userSearchDto;
-  let excludeCohortIdes;
-  let excludeUserIdes;
+    let { limit, offset, filters, exclude, sort } = userSearchDto;
+    let excludeCohortIdes;
+    let excludeUserIdes;
 
-  const result = {
-    totalCount: 0,
-    getUserDetails: [],
-  };
+    const result = {
+      totalCount: 0,
+      getUserDetails: [],
+    };
 
-  const searchCustomFields: any = {};
+    const searchCustomFields: any = {};
 
-  const queryBuilder = this.usersRepository
-    .createQueryBuilder("U")
-    .leftJoin("CohortMembers", "CM", "CM.userId = U.userId")
-    .leftJoin("UserRolesMapping", "UR", "UR.userId = U.userId")
-    .leftJoin("UserTenantMapping", "UTM", "UTM.userId = U.userId AND UR.tenantId = UTM.tenantId" )
-    .leftJoin("Roles", "R", "R.roleId = UR.roleId")
-    .select([
-      'U.userId AS "userId"',
-      'U.enrollmentId AS "enrollmentId"',
-      'U.username AS "username"',
-      'U.email AS "email"',
-      'U.firstName AS "firstName"',
-      'U.name AS "name"',
-      'UTM.tenantId AS "tenantId"',
-      'U.middleName AS "middleName"',
-      'U.lastName AS "lastName"',
-      'U.gender AS "gender"',
-      'U.dob AS "dob"',
-      'R.name AS "role"',
-      'U.mobile AS "mobile"',
-      'U.createdBy AS "createdBy"',
-      'U.updatedBy AS "updatedBy"',
-      'U.createdAt AS "createdAt"',
-      'U.updatedAt AS "updatedAt"',
-      'U.status AS "status"',
-      'UTM.status AS "tenantStatus"',
-      'COUNT(*) OVER() AS "total_count"',
-    ])
-    .groupBy('U.userId')
-    .addGroupBy('UTM.tenantId')
-    .addGroupBy('UTM.status')
-    .addGroupBy('R.name');
+    const queryBuilder = this.usersRepository
+      .createQueryBuilder("U")
+      .leftJoin("CohortMembers", "CM", "CM.userId = U.userId")
+      .leftJoin("UserRolesMapping", "UR", "UR.userId = U.userId")
+      .leftJoin("UserTenantMapping", "UTM", "UTM.userId = U.userId AND UR.tenantId = UTM.tenantId")
+      .leftJoin("Roles", "R", "R.roleId = UR.roleId")
+      .select([
+        'U.userId AS "userId"',
+        'U.enrollmentId AS "enrollmentId"',
+        'U.username AS "username"',
+        'U.email AS "email"',
+        'U.firstName AS "firstName"',
+        'U.name AS "name"',
+        'UTM.tenantId AS "tenantId"',
+        'U.middleName AS "middleName"',
+        'U.lastName AS "lastName"',
+        'U.gender AS "gender"',
+        'U.dob AS "dob"',
+        'R.name AS "role"',
+        'U.mobile AS "mobile"',
+        'U.createdBy AS "createdBy"',
+        'U.updatedBy AS "updatedBy"',
+        'U.createdAt AS "createdAt"',
+        'U.updatedAt AS "updatedAt"',
+        'U.status AS "status"',
+        'UTM.status AS "tenantStatus"',
+        'COUNT(*) OVER() AS "total_count"',
+      ])
+      .groupBy('U.userId')
+      .addGroupBy('UTM.tenantId')
+      .addGroupBy('UTM.status')
+      .addGroupBy('R.name');
 
-  // --- Filters ---
-  if (filters && Object.keys(filters).length > 0) {
-    const coreFields = await this.getCoreColumnNames();
-    const allCoreField = [...coreFields, 'fromDate', 'toDate', 'role', 'tenantId', 'name', 'tenantStatus'];
+    // --- Filters ---
+    if (filters && Object.keys(filters).length > 0) {
+      const coreFields = await this.getCoreColumnNames();
+      const allCoreField = [...coreFields, 'fromDate', 'toDate', 'role', 'tenantId', 'name', 'tenantStatus'];
 
-    for (const [key, avalue] of Object.entries(filters)) {
-      if (allCoreField.includes(key)) {
-        const value = Array.isArray(avalue) ? avalue : avalue;
+      for (const [key, avalue] of Object.entries(filters)) {
+        if (allCoreField.includes(key)) {
+          const value = Array.isArray(avalue) ? avalue : avalue;
 
-        switch (key) {
-          case "firstName":
-          case "name":
-            const nameValue = Array.isArray(value) ? value[0] : value;
-            queryBuilder.andWhere(`U.${key} ILIKE :${key}`, {
-              [key]: `%${nameValue}%`,
-            });
-            break;
-
-          case "status":
-          case "email":
-          case "username":
-          case "userId":
-            if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
-              queryBuilder.andWhere(`U.${key} IN (:...${key})`, {
-                [key]: value.map((item) => item.trim().toLowerCase()),
+          switch (key) {
+            case "firstName":
+            case "name":
+              const nameValue = Array.isArray(value) ? value[0] : value;
+              queryBuilder.andWhere(`U.${key} ILIKE :${key}`, {
+                [key]: `%${nameValue}%`,
               });
-            } else {
-              if (key === "username") {
-                queryBuilder.andWhere(`U.${key} ILIKE :${key}`, { [key]: String(value) });
+              break;
+
+            case "status":
+            case "email":
+            case "username":
+            case "userId":
+              if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+                queryBuilder.andWhere(`U.${key} IN (:...${key})`, {
+                  [key]: value.map((item) => item.trim().toLowerCase()),
+                });
               } else {
-                queryBuilder.andWhere(`U.${key} = :${key}`, { [key]: String(value) });
+                if (key === "username") {
+                  queryBuilder.andWhere(`U.${key} ILIKE :${key}`, { [key]: String(value) });
+                } else {
+                  queryBuilder.andWhere(`U.${key} = :${key}`, { [key]: String(value) });
+                }
               }
-            }
-            break;
+              break;
 
-          case "tenantStatus":
-            if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
-              queryBuilder.andWhere(`UTM.status IN (:...tenantStatus)`, {
-                tenantStatus: value.map((item) => item.trim().toLowerCase()),
-              });
-            } else {
-              queryBuilder.andWhere(`UTM.status = :tenantStatus`, { tenantStatus: String(value).toLowerCase() });
-            }
-            break;
+            case "tenantStatus":
+              if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+                queryBuilder.andWhere(`UTM.status IN (:...tenantStatus)`, {
+                  tenantStatus: value.map((item) => item.trim().toLowerCase()),
+                });
+              } else {
+                queryBuilder.andWhere(`UTM.status = :tenantStatus`, { tenantStatus: String(value).toLowerCase() });
+              }
+              break;
 
-          case "role":
-            queryBuilder.andWhere(`R.name = :role`, { role: String(value) });
-            break;
+            case "role":
+              queryBuilder.andWhere(`R.name = :role`, { role: String(value) });
+              break;
 
-          case "fromDate":
-            queryBuilder.andWhere(`DATE(U.createdAt) >= :fromDate`, { fromDate: String(value) });
-            break;
+            case "fromDate":
+              queryBuilder.andWhere(`DATE(U.createdAt) >= :fromDate`, { fromDate: String(value) });
+              break;
 
-          case "toDate":
-            queryBuilder.andWhere(`DATE(U.createdAt) <= :toDate`, { toDate: String(value) });
-            break;
+            case "toDate":
+              queryBuilder.andWhere(`DATE(U.createdAt) <= :toDate`, { toDate: String(value) });
+              break;
 
-          case "tenantId":
-            queryBuilder.andWhere(`UTM.tenantId = :tenantId`, { tenantId: String(value) });
-            break;
+            case "tenantId":
+              queryBuilder.andWhere(`UTM.tenantId = :tenantId`, { tenantId: String(value) });
+              break;
 
-          default:
-            queryBuilder.andWhere(`U.${key} = :${key}`, { [key]: String(value) });
-            break;
+            default:
+              queryBuilder.andWhere(`U.${key} = :${key}`, { [key]: String(value) });
+              break;
+          }
+        } else {
+          searchCustomFields[key] = avalue;
         }
-      } else {
-        searchCustomFields[key] = avalue;
       }
     }
-  }
 
-  // --- Exclusions ---
-  if (exclude && Object.keys(exclude).length > 0) {
-    Object.entries(exclude).forEach(([key, value]) => {
-      if (key == "cohortIds") excludeCohortIdes = value;
-      if (key == "userIds") excludeUserIdes = value;
-    });
-  }
-
-  // --- Custom Field Filtering ---
-  if (Object.keys(searchCustomFields).length > 0) {
-    const context = "USERS";
-    const customUserIds = await this.fieldsService.filterUserUsingCustomFieldsOptimized(context, searchCustomFields);
-    if (!customUserIds) return false;
-
-    queryBuilder.andWhere(`U.userId IN (:...customFieldUserIds)`, {
-      customFieldUserIds: customUserIds,
-    });
-  }
-
-  if (excludeUserIdes?.length > 0) {
-    queryBuilder.andWhere(`U.userId NOT IN (:...excludeUserIds)`, {
-      excludeUserIds: excludeUserIdes,
-    });
-  }
-
-  if (excludeCohortIdes?.length > 0) {
-    queryBuilder.andWhere(`CM.cohortId NOT IN (:...excludeCohortIds)`, {
-      excludeCohortIds: excludeCohortIdes,
-    });
-  }
-
-  // --- Tenant filter ---
-  if (tenantId && tenantId.trim() !== "") {
-    queryBuilder.andWhere(`UTM.tenantId = :headerTenantId`, { headerTenantId: tenantId });
-  }
-
-  // --- Sorting ---
-  if (sort && Array.isArray(sort) && sort.length === 2) {
-    const [column, direction] = sort;
-    const order = direction.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
-    queryBuilder.orderBy(`U.${column}`, order as 'ASC' | 'DESC');
-  }
-
-  // --- Pagination ---
-  if (offset) queryBuilder.offset(parseInt(offset, 10));
-  if (limit) queryBuilder.limit(parseInt(limit, 10));
-
-  // --- Execute ---
-  const userDetails = await queryBuilder.getRawMany();
-
-  if (userDetails.length === 0) return false;
-
-  result.totalCount = parseInt(userDetails[0].total_count, 10);
-
-  // --- Fetch & attach custom fields ---
-  if (includeCustomFields) {
-    const userIds = userDetails.map((u) => u.userId);
-    const bulkCustomFields = await this.fieldsService.getBulkCustomFieldDetails(userIds, 'Users');
-
-    for (const userData of userDetails) {
-      const customFields = bulkCustomFields[userData.userId] || [];
-      userData["customFields"] = customFields.map((data) => ({
-        fieldId: data?.fieldId,
-        label: data?.label,
-        selectedValues: data?.selectedValues,
-        type: data?.type,
-      }));
-      result.getUserDetails.push(userData);
+    // --- Exclusions ---
+    if (exclude && Object.keys(exclude).length > 0) {
+      Object.entries(exclude).forEach(([key, value]) => {
+        if (key == "cohortIds") excludeCohortIdes = value;
+        if (key == "userIds") excludeUserIdes = value;
+      });
     }
-  } else {
-    for (const userData of userDetails) {
-      userData["customFields"] = [];
-      result.getUserDetails.push(userData);
-    }
-  }
 
-  return result;
-}
+    // --- Custom Field Filtering ---
+    if (Object.keys(searchCustomFields).length > 0) {
+      const context = "USERS";
+      const customUserIds = await this.fieldsService.filterUserUsingCustomFieldsOptimized(context, searchCustomFields);
+      if (!customUserIds) return false;
+
+      queryBuilder.andWhere(`U.userId IN (:...customFieldUserIds)`, {
+        customFieldUserIds: customUserIds,
+      });
+    }
+
+    if (excludeUserIdes?.length > 0) {
+      queryBuilder.andWhere(`U.userId NOT IN (:...excludeUserIds)`, {
+        excludeUserIds: excludeUserIdes,
+      });
+    }
+
+    if (excludeCohortIdes?.length > 0) {
+      queryBuilder.andWhere(`CM.cohortId NOT IN (:...excludeCohortIds)`, {
+        excludeCohortIds: excludeCohortIdes,
+      });
+    }
+
+    // --- Tenant filter ---
+    if (tenantId && tenantId.trim() !== "") {
+      queryBuilder.andWhere(`UTM.tenantId = :headerTenantId`, { headerTenantId: tenantId });
+    }
+
+    // --- Sorting ---
+    if (sort && Array.isArray(sort) && sort.length === 2) {
+      const [column, direction] = sort;
+      const order = direction.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+      queryBuilder.orderBy(`U.${column}`, order as 'ASC' | 'DESC');
+    }
+
+    // --- Pagination ---
+    if (offset) queryBuilder.offset(parseInt(offset, 10));
+    if (limit) queryBuilder.limit(parseInt(limit, 10));
+
+    // --- Execute ---
+    const userDetails = await queryBuilder.getRawMany();
+
+    if (userDetails.length === 0) return false;
+
+    result.totalCount = parseInt(userDetails[0].total_count, 10);
+
+    // --- Fetch & attach custom fields ---
+    if (includeCustomFields) {
+      const userIds = userDetails.map((u) => u.userId);
+      const bulkCustomFields = await this.fieldsService.getBulkCustomFieldDetails(userIds, 'Users');
+
+      for (const userData of userDetails) {
+        const customFields = bulkCustomFields[userData.userId] || [];
+        userData["customFields"] = customFields.map((data) => ({
+          fieldId: data?.fieldId,
+          label: data?.label,
+          selectedValues: data?.selectedValues,
+          type: data?.type,
+        }));
+        result.getUserDetails.push(userData);
+      }
+    } else {
+      for (const userData of userDetails) {
+        userData["customFields"] = [];
+        result.getUserDetails.push(userData);
+      }
+    }
+
+    return result;
+  }
 
 
   async getUsersDetailsById(userData: UserData, response: any) {
@@ -2289,7 +2291,7 @@ export class UserService {
     }
 
     const isRoot = await this.isRootTenant(existingMapping.tenantId);
-    
+
     if (isRoot) {
       existingMapping.tenantId = tenantId;
       existingMapping.roleId = roleId;
@@ -2328,7 +2330,7 @@ export class UserService {
     }
 
     const isRoot = await this.isRootTenant(existingMapping.tenantId);
-    
+
     if (isRoot) {
       existingMapping.tenantId = tenantId;
       existingMapping.createdBy = createdBy;
@@ -3637,9 +3639,27 @@ export class UserService {
       const { limit, offset, sort: [sortField, sortDirection], role, filters, customfields } = hierarchicalFiltersDto;
 
       // Extract filter parameters
-      const filterResult = this.findDeepestFilter(filters);
       const nameFilter = filters?.name;
       const statusFilter = filters?.status;
+      
+      // Prioritize cohortId filter - if present, ignore state, district, block, village
+      // If cohortId is provided, we'll traverse the hierarchy to determine the level dynamically
+      let filterResult: { level: string | null; ids: string[] } = { level: null, ids: [] };
+      
+      if (filters) {
+        // Check for cohortId (dynamic approach - supports unlimited hierarchy depth)
+        if (filters.cohortId && Array.isArray(filters.cohortId) && filters.cohortId.length > 0) {
+          // Filter out empty strings and null values
+          const validIds = filters.cohortId.filter(id => id && typeof id === 'string' && id.trim().length > 0);
+          if (validIds.length > 0) {
+            filterResult = { level: 'cohortId', ids: validIds };
+          }
+        }
+        // Only if cohortId is not present, check for state, district, block, village, center, batch
+        if (!filterResult.level) {
+          filterResult = this.findDeepestFilter(filters);
+        }
+      }
 
       // Filter out center and batch from customfields request (they belong in cohortData)
       const filteredCustomFields = customfields ? customfields.filter(field =>
@@ -3648,6 +3668,8 @@ export class UserService {
       if (customfields && customfields.length !== (filteredCustomFields?.length || 0)) {
         const excludedFields = this.getCohortFilterLevels().join('/');
       }
+
+      console.log(filterResult);
 
       const normalizedSortDirection = sortDirection.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
       const userData = await this.getOptimizedFilteredUsers(
@@ -3679,12 +3701,12 @@ export class UserService {
 
       // Return successful response
       return APIResponse.success(response, apiId, {
-        users: userData.users,
         totalCount: userData.totalCount,
         currentPageCount: userData.users.length,
         limit,
         offset,
-        sort: { field: sortField, direction: sortDirection.toLowerCase() }
+        sort: { field: sortField, direction: sortDirection.toLowerCase() },
+        users: userData.users
       }, HttpStatus.OK, "Users retrieved successfully");
 
     } catch (error) {
@@ -3945,6 +3967,27 @@ export class UserService {
   }
 
   /**
+   * Helper method to check if a filter level is level2 (batch)
+   */
+  private isLevel2Filter(level: string): boolean {
+    return level === this.HIERARCHICAL_FILTER_LEVELS.BATCH;
+  }
+
+  /**
+   * Helper method to check if a filter level is level1 (center)
+   */
+  private isLevel1Filter(level: string): boolean {
+    return level === this.HIERARCHICAL_FILTER_LEVELS.CENTER;
+  }
+
+  /**
+   * Helper method to check if a filter level is cohortId (dynamic cohort filtering)
+   */
+  private isCohortIdFilter(level: string): boolean {
+    return level === 'cohortId';
+  }
+
+  /**
    * Helper method to check if a field should be excluded from customfields (batch/center)
    */
   private isExcludedFromCustomFields(fieldName: string): boolean {
@@ -3969,6 +4012,7 @@ export class UserService {
     // Check filters in order from most specific to least specific
     for (const level of this.FILTER_HIERARCHY_ORDER) {
       const filterIds = filters[level];
+
       if (filterIds && Array.isArray(filterIds) && filterIds.length > 0) {
         // Filter out empty strings and null values
         const validIds = filterIds.filter(id => id && typeof id === 'string' && id.trim().length > 0);
@@ -4049,8 +4093,14 @@ export class UserService {
         limit,
         offset
       );
-      const result = await this.usersRepository.query(queryBuilder.query, queryBuilder.params);
-      const totalCount = result.length > 0 ? parseInt(result[0].total_count) : 0;
+
+      // Execute count and data queries in parallel for better performance
+      const [countResult, result] = await Promise.all([
+        this.usersRepository.query(queryBuilder.countQuery, queryBuilder.params.slice(0, -2)), // Exclude limit and offset for count
+        this.usersRepository.query(queryBuilder.query, queryBuilder.params)
+      ]);
+
+      const totalCount = countResult.length > 0 ? parseInt(countResult[0].total_count) : 0;
 
       // Get custom fields data if requested
       let customFieldsData = {};
@@ -4063,7 +4113,17 @@ export class UserService {
       let batchCenterData = {};
       if (result.length > 0) {
         const userIds = result.map((row: any) => row.userId);
-        batchCenterData = await this.getBatchAndCenterNames(userIds,tenantId);
+
+        // Check if cohortId filter was used (dynamic hierarchy - supports unlimited depth)
+        const hasCohortIdFilter = locationFilter?.level === 'cohortId';
+        
+        if (hasCohortIdFilter) {
+          // Use dynamic function for cohortId filter (traverses hierarchy recursively)
+          batchCenterData = await this.getDynamicCohortLevelData(userIds, tenantId);
+        } else {
+          // Use original function for center/batch filters
+          batchCenterData = await this.getBatchAndCenterNames(userIds, tenantId);
+        }
       }
 
       // Process and combine all data
@@ -4090,6 +4150,7 @@ export class UserService {
 
   /**
    * Build optimized user query with conditional filters and pagination
+   * Returns separate queries for data and count to avoid CTE overhead
    */
   private buildOptimizedUserQuery(
     tenantId: string,
@@ -4101,62 +4162,107 @@ export class UserService {
     sortDirection: string = 'ASC',
     limit: number = 10,
     offset: number = 0
-  ): { query: string; params: any[] } {
+  ): { query: string; countQuery: string; params: any[] } {
 
+    console.log(locationFilter)
     const conditions: string[] = [];
+    const countConditions: string[] = [];
     const params: any[] = [];
     let paramIndex = 1;
 
-    // Base query structure
-    let baseQuery = `
-      WITH filtered_users AS (
-        SELECT DISTINCT u."userId", u."username", u."firstName", u."name", u."middleName", 
-          u."lastName", u."email", u."mobile", u."gender", u."dob", 
-          u."status", u."createdAt", utm."tenantId", utm."status" as "tenantStatus"
-        FROM "Users" u
-        LEFT JOIN "UserTenantMapping" utm ON u."userId" = utm."userId"
+    // Build FROM and JOIN clauses (shared between main and count queries)
+    let fromClause = `
+      FROM "Users" u
+      LEFT JOIN "UserTenantMapping" utm ON u."userId" = utm."userId"
     `;
 
     // Always filter by tenant
-    conditions.push(`utm."tenantId" = $${paramIndex}`);
+    const tenantCondition = `utm."tenantId" = $${paramIndex}`;
+    conditions.push(tenantCondition);
+    countConditions.push(tenantCondition);
     params.push(tenantId);
     paramIndex++;
 
     // Add location filter if provided
     if (locationFilter && locationFilter.level && locationFilter.ids.length > 0) {
-      if (this.isBatchFilter(locationFilter.level)) {
-        // Batch filtering through cohort membership
-        baseQuery += `
+      if (this.isCohortIdFilter(locationFilter.level)) {
+        // cohortId filtering - need to handle both direct membership and parent-child relationships
+        // For level1 (center): users are members of children (batches), not the center itself
+        // For level2+ (batch): users are direct members
+        
+        // Use recursive CTE to find all descendant cohorts (children, grandchildren, etc.)
+        // This handles both cases:
+        // 1. Direct membership: if cohortId is level2+, users are direct members
+        // 2. Child membership: if cohortId is level1, find all children and filter by those
+        fromClause += `
           JOIN "CohortMembers" cm ON u."userId" = cm."userId"
         `;
-        conditions.push(`cm."cohortId" = ANY($${paramIndex})`);
+        
+        // Recursive CTE to find all cohorts that match the filter (direct or as descendants)
+        // Cast both parentId and cohortId to text for comparison (parentId is stored as varchar/text)
+        const cohortIdCondition = `cm."cohortId" IN (
+          WITH RECURSIVE cohort_descendants AS (
+            -- Base case: start with the filter cohortIds
+            SELECT "cohortId" FROM "Cohort" 
+            WHERE "cohortId" = ANY($${paramIndex}::uuid[]) AND "tenantId" = $${paramIndex + 1}::uuid
+            UNION
+            -- Recursive case: find all children (descendants going down)
+            -- Cast both to text for comparison (parentId is varchar, cohortId is uuid)
+            SELECT c."cohortId" 
+            FROM "Cohort" c
+            INNER JOIN cohort_descendants cd ON c."parentId"::text = cd."cohortId"::text
+            WHERE c."tenantId" = $${paramIndex + 1}::uuid AND c."parentId" IS NOT NULL
+          )
+          SELECT "cohortId" FROM cohort_descendants
+        )`;
+        conditions.push(cohortIdCondition);
+        countConditions.push(cohortIdCondition);
+        params.push(locationFilter.ids);
+        params.push(tenantId);
+        paramIndex += 2;
+      } else if (this.isLevel2Filter(locationFilter.level)) {
+        // Level2 filtering (batch) - direct cohort membership
+        fromClause += `
+          JOIN "CohortMembers" cm ON u."userId" = cm."userId"
+        `;
+        const level2Condition = `cm."cohortId" = ANY($${paramIndex})`;
+        conditions.push(level2Condition);
+        countConditions.push(level2Condition);
         params.push(locationFilter.ids);
         paramIndex++;
-      } else if (this.isCenterFilter(locationFilter.level)) {
-        // Center filtering through cohort relationships
-        baseQuery += `
+      } else if (this.isLevel1Filter(locationFilter.level)) {
+        // Level1 filtering (center) - through level2 to level1 relationship
+        fromClause += `
           JOIN "CohortMembers" cm ON u."userId" = cm."userId"
-          JOIN "Cohort" batch ON cm."cohortId" = batch."cohortId"
-          JOIN "Cohort" center ON batch."parentId"::text = center."cohortId"::text
+          JOIN "Cohort" level2 ON cm."cohortId" = level2."cohortId"
+          JOIN "Cohort" level1 ON level2."parentId"::text = level1."cohortId"::text
         `;
-        conditions.push(`center."cohortId" = ANY($${paramIndex})`);
+        const level1Condition = `level1."cohortId" = ANY($${paramIndex})`;
+        conditions.push(level1Condition);
+        countConditions.push(level1Condition);
         params.push(locationFilter.ids);
         paramIndex++;
       } else {
         // Field-based location filtering (state, district, block, village)
-        baseQuery += `
+        fromClause += `
           JOIN "FieldValues" fv ON u."userId" = fv."itemId"
           JOIN "Fields" f ON fv."fieldId" = f."fieldId"
         `;
-        conditions.push(`f."name" = $${paramIndex}`);
+        const fieldNameCondition = `f."name" = $${paramIndex}`;
+        conditions.push(fieldNameCondition);
+        countConditions.push(fieldNameCondition);
         params.push(locationFilter.level);
         paramIndex++;
 
-        conditions.push(`fv."value" && $${paramIndex}`);
+        const fieldValueCondition = `fv."value" && $${paramIndex}`;
+        conditions.push(fieldValueCondition);
+        countConditions.push(fieldValueCondition);
         params.push(locationFilter.ids);
         paramIndex++;
 
-        conditions.push(`fv."tenantId" = $${paramIndex}`);
+        const fieldTenantCondition = `fv."tenantId" = $${paramIndex}`;
+        conditions.push(fieldTenantCondition);
+        countConditions.push(fieldTenantCondition);
         params.push(tenantId);
         paramIndex++;
       }
@@ -4164,53 +4270,78 @@ export class UserService {
 
     // Add role filter if provided
     if (roleFilter && roleFilter.length > 0) {
-      baseQuery += `
+      fromClause += `
         JOIN "UserRolesMapping" urm ON u."userId" = urm."userId"
         JOIN "Roles" r ON urm."roleId" = r."roleId"
       `;
-      conditions.push(`r."name" = ANY($${paramIndex})`);
+      const roleCondition = `r."name" = ANY($${paramIndex})`;
+      conditions.push(roleCondition);
+      countConditions.push(roleCondition);
       params.push(roleFilter);
       paramIndex++;
 
-      conditions.push(`urm."tenantId" = $${paramIndex}`);
+      const roleTenantCondition = `urm."tenantId" = $${paramIndex}`;
+      conditions.push(roleTenantCondition);
+      countConditions.push(roleTenantCondition);
       params.push(tenantId);
       paramIndex++;
     }
 
     // Add name filter if provided
     if (nameFilter && nameFilter.trim()) {
-      conditions.push(`u."name" ILIKE $${paramIndex}`);
+      const nameCondition = `u."name" ILIKE $${paramIndex}`;
+      conditions.push(nameCondition);
+      countConditions.push(nameCondition);
       params.push(`%${nameFilter.trim()}%`);
       paramIndex++;
     }
 
     // Add status filter if provided
     if (statusFilter && statusFilter.length > 0) {
-      conditions.push(`utm."status" = ANY($${paramIndex})`);
+      const statusCondition = `utm."status" = ANY($${paramIndex})`;
+      conditions.push(statusCondition);
+      countConditions.push(statusCondition);
       params.push(statusFilter);
       paramIndex++;
     }
 
-    // Complete the base query
-    baseQuery += `
-        WHERE ${conditions.join(' AND ')}
-      ),
-      paginated_users AS (
-        SELECT *, (SELECT COUNT(*) FROM filtered_users) as total_count
-        FROM filtered_users
-        ORDER BY "${sortField}" ${sortDirection}
+    // Build WHERE clause
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const countWhereClause = countConditions.length > 0 ? `WHERE ${countConditions.join(' AND ')}` : '';
+
+    // Build main query - first get distinct user IDs with pagination, then join all data
+    // This ensures we get exactly 'limit' number of users, not rows affected by role joins
+    // Note: When using SELECT DISTINCT with ORDER BY, the sort field must be in SELECT list
+    const mainQuery = `
+      SELECT u."userId", u."username", u."firstName", u."name", u."middleName", 
+        u."lastName", u."email", u."mobile", u."gender", u."dob", 
+        u."status", u."createdAt", utm."tenantId", utm."status" as "tenantStatus",
+        r."name" as "roleName"
+      FROM (
+        SELECT DISTINCT u."userId", u."${sortField}" as sort_value
+        ${fromClause}
+        ${whereClause}
+        ORDER BY sort_value ${sortDirection}
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-      )
-      SELECT pu.*, r."name" as "roleName"
-      FROM paginated_users pu
-      LEFT JOIN "UserRolesMapping" urm ON pu."userId" = urm."userId" AND pu."tenantId" = urm."tenantId"
+      ) paginated_users
+      INNER JOIN "Users" u ON paginated_users."userId" = u."userId"
+      LEFT JOIN "UserTenantMapping" utm ON u."userId" = utm."userId" AND utm."tenantId" = $1
+      LEFT JOIN "UserRolesMapping" urm ON u."userId" = urm."userId" AND utm."tenantId" = urm."tenantId"
       LEFT JOIN "Roles" r ON urm."roleId" = r."roleId"
-      ORDER BY pu."${sortField}" ${sortDirection}
+      ORDER BY u."${sortField}" ${sortDirection}
     `;
 
+    // Build count query - count distinct users
+    const countQuery = `
+      SELECT COUNT(DISTINCT u."userId") as total_count
+      ${fromClause}
+      ${countWhereClause}
+    `;
+    // console.log("query", mainQuery);
     // Add limit and offset parameters
     params.push(limit, offset);
-    return { query: baseQuery, params };
+
+    return { query: mainQuery, countQuery: countQuery, params };
   }
 
   /**
@@ -4269,7 +4400,8 @@ export class UserService {
     sortDirection: string,
     customFieldNames?: string[],
     nameFilter?: string,
-    statusFilter?: string[]
+    statusFilter?: string[],
+    locationFilter?: { level: string; ids: string[] }
   ): Promise<{ totalCount: number; users: any[] }> {
     const apiId = APIID.USER_LIST;
 
@@ -4279,6 +4411,9 @@ export class UserService {
         return { totalCount: 0, users: [] };
       }
 
+      // Check if cohortId filter was used (dynamic hierarchy - supports unlimited depth)
+      const hasCohortIdFilter = locationFilter?.level === 'cohortId';
+      
       // Optimize queries by combining count and details in a single query
       const [combinedUserData, customFieldsData, batchCenterData] = await Promise.allSettled([
         // Step 1: Get user details with total count in single query (optimized)
@@ -4290,7 +4425,10 @@ export class UserService {
           : Promise.resolve({}),
 
         // Step 3: Get all cohort associations (batch and center data)
-        this.getBatchAndCenterNames(userIds,tenantId)
+        // Use dynamic function for cohortId filter (traverses hierarchy recursively), otherwise use original function
+        hasCohortIdFilter
+          ? this.getDynamicCohortLevelData(userIds, tenantId)
+          : this.getBatchAndCenterNames(userIds, tenantId)
       ]);
 
       // Handle any failed promises
@@ -4329,16 +4467,263 @@ export class UserService {
     }
   }
 
+
+
+  // private async getCohortMemberData(userIds: string[], tenantId: string) {
+  //   const apiId = APIID.USER_LIST;
+
+  //   if (!userIds || userIds.length === 0) {
+  //     return {};
+  //   }
+
+  //   const cohortMemberData = await this.cohortMemberRepository.find({
+  //     where: {
+  //       userId: In(userIds),
+  //     },
+  //     select: ['cohortMembershipId', 'userId', 'cohortId', 'status']
+  //   });
+  //   let cohortandbatchData = {};
+
+  //   // Get unique cohort IDs to avoid duplicate queries
+  //   const uniqueCohortIds = [...new Set(cohortMemberData.map(c => c.cohortId))];
+  //   let centerAndBatch = {};
+    
+  //   for (let cohortId of uniqueCohortIds) {
+  //     centerAndBatch[cohortId] = await this.getBatchAndCenter(cohortId);
+  //   }
+    
+  //   // Group cohort data by userId - each user can have multiple cohort memberships
+  //   cohortMemberData.forEach((data) => {
+  //     // Initialize array for userId if it doesn't exist
+  //     if (!cohortandbatchData[data.userId]) {
+  //       cohortandbatchData[data.userId] = [];
+  //     }
+      
+  //     // Push the center and batch data for this cohort membership with cohortMember info
+  //     if (centerAndBatch[data.cohortId]) {
+  //       cohortandbatchData[data.userId].push({
+  //         ...centerAndBatch[data.cohortId],
+  //         cohortMember: {
+  //           status: data.status || 'unknown',
+  //           membershipId: data.cohortMembershipId || ''
+  //         }
+  //       });
+  //     }
+  //   });
+
+  //   return cohortandbatchData;
+  // }
+
+
+
+
+  // private async getBatchAndCenter(cohortId: string){
+  //   try {
+  //     const cohortData = await this.cohortRepository.findOne({
+  //       where: {
+  //         cohortId: cohortId
+  //       }
+  //     });
+
+  //     if (!cohortData) {
+  //       return {
+  //         centerId: null,
+  //         centerName: null,
+  //         centerStatus: null,
+  //         batchId: null,
+  //         batchName: null,
+  //         batchStatus: null
+  //       };
+  //     }
+
+  //     // If it's a center (parentId is null), return center info with batch as null
+  //     if (cohortData.parentId == null) {
+  //       return {
+  //         centerId: cohortData.cohortId,
+  //         centerName: cohortData.name,
+  //         centerStatus: cohortData.status,
+  //         batchId: null,
+  //         batchName: null,
+  //         batchStatus: null
+  //       };
+  //     }
+
+  //     // If it's a batch (has parentId), recursively get the parent center
+  //     const parentCenterData = await this.getBatchAndCenter(cohortData.parentId);
+
+  //     // Return both center (from parent) and batch (current) information
+  //     return {
+  //       centerId: parentCenterData.centerId,
+  //       centerName: parentCenterData.centerName,
+  //       centerStatus: parentCenterData.centerStatus,
+  //       batchId: cohortData.cohortId,
+  //       batchName: cohortData.name,
+  //       batchStatus: cohortData.status
+  //     };
+  //   } catch (error) {
+  //     console.error("Error in getBatchAndCenter:", error);
+  //     return {
+  //       centerId: null,
+  //       centerName: null,
+  //       centerStatus: null,
+  //       batchId: null,
+  //       batchName: null,
+  //       batchStatus: null
+  //     };
+  //   }
+  // }
+
   /**
-   * Get all cohort associations for users with complete details for cohortData structure
+   * Recursively traverse up the cohort hierarchy to find all parent levels
+   * Returns an array of cohorts from topmost (level1) to the given cohortId
+   * Supports unlimited hierarchy depth (1, 2, 3, 4, ... n levels)
+   * @param cohortId - The starting cohort ID
+   * @param tenantId - Tenant ID for validation
+   * @param visitedIds - Set to track visited IDs and prevent infinite loops
+   * @returns Array of cohort objects ordered from topmost (index 0) to the given cohort (last index)
    */
-  private async getBatchAndCenterNames(userIds: string[],tenantId: string): Promise<any> {
+  private async traverseCohortHierarchy(
+    cohortId: string, 
+    tenantId: string, 
+    visitedIds: Set<string> = new Set<string>()
+  ): Promise<any[]> {
+    // Prevent infinite loops
+    if (visitedIds.has(cohortId)) {
+      LoggerUtil.warn(`Circular reference detected in cohort hierarchy for cohortId: ${cohortId}`, APIID.USER_LIST);
+      return [];
+    }
+
+    visitedIds.add(cohortId);
+
+    // Get current cohort data
+    const cohort = await this.cohortRepository.findOne({
+      where: { cohortId: cohortId, tenantId }
+    });
+
+    if (!cohort) {
+      LoggerUtil.warn(`Cohort not found: ${cohortId}`, APIID.USER_LIST);
+      return [];
+    }
+
+    // Build current cohort data
+    const currentCohort = {
+      cohortId: cohort.cohortId,
+      name: cohort.name,
+      status: cohort.status,
+      type: cohort.type,
+      parentId: cohort.parentId
+    };
+
+    // Check if this cohort has a parentId
+    if (cohort.parentId && cohort.parentId.trim().length > 0) {
+      // Yes, it has a parent - recursively get the parent's hierarchy
+      const parentHierarchy = await this.traverseCohortHierarchy(cohort.parentId, tenantId, visitedIds);
+      
+      // Return parent hierarchy first, then current cohort
+      // This ensures topmost (level1) is at index 0, and current cohort is at the end
+      return [...parentHierarchy, currentCohort];
+    } else {
+      // No parentId - this is the topmost level (level1)
+      // Return array with just this cohort
+      return [currentCohort];
+    }
+  }
+
+  /**
+   * Get dynamic cohort level data for users - works with any cohort hierarchy depth (1, 2, 3, 4, ... n levels)
+   * Uses recursive traversal to determine levels dynamically
+   * Returns data with dynamic level naming: level1Id, level1Name, level1Status, level2Id, etc.
+   * Supports unlimited hierarchy depth
+   */
+  private async getDynamicCohortLevelData(userIds: string[], tenantId: string): Promise<any> {
     const apiId = APIID.USER_LIST;
-  
+
     if (!userIds || userIds.length === 0) {
       return {};
     }
-  
+
+    try {
+      // Get all user assignments with cohort info
+      const assignmentQuery = `
+        SELECT 
+          cm."userId",
+          cm."cohortId",
+          cm."cohortMembershipId" as "membershipId",
+          cm."status" as "membershipStatus"
+        FROM public."CohortMembers" cm
+        LEFT JOIN public."Cohort" cohort ON cm."cohortId" = cohort."cohortId"
+        WHERE cm."userId" = ANY($1::uuid[])
+        AND cohort."tenantId" = $2::uuid
+      `;
+
+      const assignments = await this.usersRepository.query(assignmentQuery, [userIds, tenantId]);
+
+      if (assignments.length === 0) {
+        LoggerUtil.warn(`No cohort memberships found for any of the ${userIds.length} users`, apiId);
+        return {};
+      }
+
+      // Group all results by userId
+      const cohortDataMap: Record<string, Array<any>> = {};
+
+      // Process each assignment and traverse hierarchy recursively
+      for (const assignment of assignments) {
+        const { userId, cohortId, membershipId, status: membershipStatus } = assignment;
+
+        // Traverse up the hierarchy recursively to get all levels
+        // Start with empty visitedIds set for each assignment
+        const hierarchy = await this.traverseCohortHierarchy(cohortId, tenantId, new Set<string>());
+
+        if (hierarchy.length === 0) {
+          continue;
+        }
+
+        // Initialize array for this user if not exists
+        if (!cohortDataMap[userId]) {
+          cohortDataMap[userId] = [];
+        }
+
+        // Build dynamic level object based on hierarchy depth
+        const levelData: any = {
+          cohortMember: {
+            status: membershipStatus || 'unknown',
+            membershipId: String(membershipId)
+          }
+        };
+
+        // Map hierarchy to level1, level2, level3, level4, ... levelN dynamically
+        // hierarchy[0] = topmost (level1), hierarchy[1] = level2, etc.
+        hierarchy.forEach((cohort, index) => {
+          const levelNumber = index + 1; // level1, level2, level3, level4, ... levelN
+          levelData[`level${levelNumber}Id`] = cohort.cohortId ? String(cohort.cohortId) : null;
+          levelData[`level${levelNumber}Name`] = cohort.name || null;
+          levelData[`level${levelNumber}Status`] = cohort.status || null;
+        });
+
+        // Note: We don't set remaining levels to null anymore since we support unlimited depth
+        // The response will only contain the levels that exist in the hierarchy
+
+        cohortDataMap[userId].push(levelData);
+      }
+
+      return cohortDataMap;
+
+    } catch (error) {
+      LoggerUtil.error(`Error in getDynamicCohortLevelData: ${error.message}`, error.stack, apiId);
+      return {};
+    }
+  }
+
+  /**
+   * Get all cohort associations for users with complete details for cohortData structure
+   */
+  private async getBatchAndCenterNames(userIds: string[], tenantId: string): Promise<any> {
+    const apiId = APIID.USER_LIST;
+
+    if (!userIds || userIds.length === 0) {
+      return {};
+    }
+
     try {
       // Get all user assignments with cohort info
       const assignmentQuery = `
@@ -4354,14 +4739,14 @@ export class UserService {
         WHERE cm."userId" = ANY($1::uuid[])
         AND cohort."tenantId" = $2::uuid
       `;
-  
-      const assignments = await this.usersRepository.query(assignmentQuery, [userIds,tenantId]);
-      
+
+      const assignments = await this.usersRepository.query(assignmentQuery, [userIds, tenantId]);
+
       if (assignments.length === 0) {
         LoggerUtil.warn(`No cohort memberships found for any of the ${userIds.length} users`, apiId);
         return {};
       }
-  
+
       // Build query based on type (batch or center)
       const buildQuery = (isBatch: boolean) => {
         const selectedItem = isBatch
@@ -4377,12 +4762,12 @@ export class UserService {
              cohort."cohortId" as "centerId",
              cohort."name" AS "centerName",
              cohort."status" AS "centerStatus"`;
-  
+
         const condition = isBatch
           ? `LEFT JOIN public."Cohort" batch ON cm."cohortId" = batch."cohortId"
              LEFT JOIN public."Cohort" center ON batch."parentId"::uuid = center."cohortId"`
           : `LEFT JOIN public."Cohort" cohort ON cm."cohortId" = cohort."cohortId"`;
-  
+
         return `
           SELECT 
             cm."userId",
@@ -4399,15 +4784,15 @@ export class UserService {
           ORDER BY cm."createdAt" DESC
         `;
       };
-  
+
       // Separate batch and center assignments
       const batchData = { userIds: [], cohortIds: [] };
       const centerData = { userIds: [], cohortIds: [] };
-  
+
       assignments.forEach((row: any) => {
         const isBatch = row.type === 'BATCH' && row.parentId !== null;
         const isCenter = row.type === 'COHORT' && row.parentId === null;
-        
+
         if (isBatch) {
           batchData.userIds.push(row.userId);
           batchData.cohortIds.push(row.cohortId);
@@ -4416,31 +4801,31 @@ export class UserService {
           centerData.cohortIds.push(row.cohortId);
         }
       });
-  
+
       // Run queries and combine results
       const result = [];
-  
+
       if (batchData.userIds.length > 0) {
         const batchResult = await this.usersRepository.query(
-          buildQuery(true), 
+          buildQuery(true),
           [batchData.userIds, batchData.cohortIds]
         );
         result.push(...batchResult);
       }
-  
+
       if (centerData.userIds.length > 0) {
         const centerResult = await this.usersRepository.query(
-          buildQuery(false), 
+          buildQuery(false),
           [centerData.userIds, centerData.cohortIds]
         );
         result.push(...centerResult);
       }
-  
+
       if (result.length === 0) {
         LoggerUtil.warn(`No cohort memberships found for any of the ${userIds.length} users`, apiId);
         return {};
       }
-  
+
       // Group all results by userId
       const cohortDataMap: Record<string, Array<{
         centerId: string | null;
@@ -4454,12 +4839,12 @@ export class UserService {
           membershipId: string;
         };
       }>> = {};
-  
+
       result.forEach((row: any) => {
         if (!cohortDataMap[row.userId]) {
           cohortDataMap[row.userId] = [];
         }
-  
+
         cohortDataMap[row.userId].push({
           centerId: row.centerId ? String(row.centerId) : null,
           centerName: row.centerName || null,
@@ -4473,9 +4858,9 @@ export class UserService {
           }
         });
       });
-  
+
       return cohortDataMap;
-  
+
     } catch (error) {
       return {};
     }
@@ -4859,7 +5244,7 @@ export class UserService {
       'block': { table: 'block', idColumn: 'block_id', nameColumn: 'block_name' },
       'village': { table: 'village', idColumn: 'village_id', nameColumn: 'village_name' }
     };
-    
+
     // Collect all unique IDs for each location field type
     const locationIds = {};
     Object.keys(customFieldsData).forEach(userId => {

@@ -155,6 +155,54 @@ export class ValidLocationFilterConstraint implements ValidatorConstraintInterfa
 }
 
 /**
+ * Custom validator to ensure mutual exclusivity between center/cohortLevel1 and batch/cohortLevel2
+ */
+@ValidatorConstraint({ name: 'mutualExclusiveCohortFilters', async: false })
+export class MutualExclusiveCohortFiltersConstraint implements ValidatorConstraintInterface {
+  validate(filters: any, args: ValidationArguments): boolean {
+    if (!filters || typeof filters !== 'object') {
+      return true; // Let other validators handle empty/null cases
+    }
+
+    const hasCenter = filters.center && Array.isArray(filters.center) && filters.center.length > 0;
+    const hasCohortLevel1 = filters.cohortLevel1 && Array.isArray(filters.cohortLevel1) && filters.cohortLevel1.length > 0;
+    const hasBatch = filters.batch && Array.isArray(filters.batch) && filters.batch.length > 0;
+    const hasCohortLevel2 = filters.cohortLevel2 && Array.isArray(filters.cohortLevel2) && filters.cohortLevel2.length > 0;
+
+    // If center is provided, cohortLevel1 cannot be provided
+    if (hasCenter && hasCohortLevel1) {
+      return false;
+    }
+
+    // If batch is provided, cohortLevel2 cannot be provided
+    if (hasBatch && hasCohortLevel2) {
+      return false;
+    }
+
+    return true;
+  }
+
+  defaultMessage(): string {
+    return 'Cannot use both center and cohortLevel1 filters together, or batch and cohortLevel2 filters together. Use either center or cohortLevel1, and either batch or cohortLevel2.';
+  }
+}
+
+/**
+ * Decorator for validating mutual exclusivity of cohort filters
+ */
+export function IsMutualExclusiveCohortFilters(validationOptions?: ValidationOptions) {
+  return function (object: Object, propertyName: string) {
+    registerDecorator({
+      target: object.constructor,
+      propertyName: propertyName,
+      options: validationOptions,
+      constraints: [],
+      validator: MutualExclusiveCohortFiltersConstraint,
+    });
+  };
+}
+
+/**
  * Decorator for validating location filter arrays
  */
 export function IsValidLocationFilter(validationOptions?: ValidationOptions) {
@@ -249,6 +297,40 @@ class LocationFiltersDto {
 
   @ApiPropertyOptional({
     type: [String],
+    description: "Array of cohort Level 1 to filter by",
+  })
+  @Expose()
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000, { message: 'Cohort Level 1 filter cannot contain more than 1000 entries' })
+  @IsUUID(undefined, { each: true })
+  cohortLevel1?: string[];
+
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: "Array of cohort Level 2 to filter by",
+  })
+  @Expose()
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000, { message: 'Cohort Level 2 filter cannot contain more than 1000 entries' })
+  @IsUUID(undefined, { each: true })
+  cohortLevel2?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: "Array of cohort IDs to filter by. The system will automatically determine the hierarchy level by traversing parent relationships.",
+  })
+  @Expose()
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000, { message: 'Cohort ID filter cannot contain more than 1000 entries' })
+  @IsUUID(undefined, { each: true })
+  cohortId?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
     description: "Array of user status values to filter by. Allowed values: active, inactive, archived",
     example: ["active", "inactive"],
     enum: ["active", "inactive", "archived"]
@@ -318,7 +400,7 @@ export class HierarchicalLocationFiltersDto {
 
   @ApiProperty({
     type: LocationFiltersDto,
-    description: "Location-based filters for hierarchical search. Filters are optional - you can search by location, role, name, or leave empty for default results.",
+    description: "Location-based filters for hierarchical search. Filters are optional - you can search by location, role, name, or leave empty for default results. Note: 'center' and 'cohortLevel1' are mutually exclusive, and 'batch' and 'cohortLevel2' are mutually exclusive.",
     required: true
   })
   @Expose()
@@ -327,6 +409,9 @@ export class HierarchicalLocationFiltersDto {
   @Type(() => LocationFiltersDto)
   @IsAtLeastOneFilter({
     message: 'At least one location filter or role filter must be provided'
+  })
+  @Validate(MutualExclusiveCohortFiltersConstraint, {
+    message: 'Cannot use both center and cohortLevel1 filters together, or batch and cohortLevel2 filters together. Use either center or cohortLevel1, and either batch or cohortLevel2.'
   })
   filters: LocationFiltersDto;
 
@@ -373,5 +458,4 @@ export class HierarchicalLocationFiltersDto {
   @IsString({ each: true })
   @IsValidLocationFilter()
   customfields?: string[];
-
 }

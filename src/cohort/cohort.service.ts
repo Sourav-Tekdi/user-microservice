@@ -670,6 +670,7 @@ export class CohortService {
         );
       }
     } catch (error) {
+      console.log(error)
       LoggerUtil.error(
         `${API_RESPONSES.SERVER_ERROR}`,
         `Error: ${error.message}`,
